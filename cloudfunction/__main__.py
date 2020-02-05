@@ -25,6 +25,7 @@ LT_PAIRS = {
     'fr': 'French',
     'de': 'German',
     'hi': 'Hindi',
+    'hu': 'Hungarian',
     'it': 'Italian',
     'ja': 'Japanese',
     'ko': 'Korean',
@@ -83,7 +84,8 @@ def main( params ):
 
     # check for empty or null string
     try:
-        text = params['text']
+        text = params['input']['text']
+        print('User input: ' + text)
     except:
         text = ''
 
@@ -112,6 +114,8 @@ def main( params ):
             'language': ''
         }
 
+    print('Detected user language: ' + language)
+
     # validate support for language
     if language not in LT_PAIRS.keys():
         return {
@@ -135,7 +139,8 @@ def main( params ):
         text = res['translations'][0]['translation']
 
     # supply language as entity
-    text += ' (@language:{})'.format( language )
+    text += ' (@lng:{})'.format( language )
+    print('Text in base language to be sent to Watson Assistant: ' + text)
 
     # hit conversation
     response = assistant.message(
@@ -144,6 +149,8 @@ def main( params ):
         context=context
     )
     res = response.get_result()
+    print('Response from Watson Assistant: ')
+    print(res)
     new_context = res['context']
     output = res['output']
     output_text = [text for text in res['output']['text'] if text]
@@ -153,20 +160,27 @@ def main( params ):
 
     # translate back to original language if needed
     if language != BASE_LANGUAGE:
-        response = translator.translate(
-            output_text,
-            source=BASE_LANGUAGE,
-            target=language
-        )
-        res = response.get_result()
-        output_text = [t['translation'] for t in res['translations']]
-        message = output_text[0]
-        output['text'] = output_text
+        chatbotResponseIdentify = translator.identify( output )
+        chatbotResponseLanguage = chatbotResponseIdentify.get_result()
+
+        # translate only if chatbot response was NOT in target language
+        if chatbotResponseLanguage and chatbotResponseLanguage['languages'][0]['confidence'] > LT_THRESH and chatbotResponseLanguage['languages'][0]['language'] != language:
+            print('Response from Watson Assistant needs translation to target language...')
+            response = translator.translate(
+                output_text,
+                source=BASE_LANGUAGE,
+                target=language
+            )
+            res = response.get_result()
+            output_text = [t['translation'] for t in res['translations']]
+            message = output_text[0]
+            output['text'] = output_text
+            print('Watson response translated to target lang: ' + message)
 
     return {
         'message': message,
         'context': json.dumps( new_context ),
-        'output': json.dumps( output ),
+        'output': output,
         'intents': json.dumps( intents ),
         'language': language
     }
